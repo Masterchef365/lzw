@@ -7,7 +7,7 @@
 use std::io;
 use std::io::Read;
 
-use bitstream::{BitReader, BitWriter, Bits};
+use crate::bitstream::{BitReader, BitWriter, Bits};
 
 const MAX_CODESIZE: u8 = 12;
 const MAX_ENTRIES: usize = 1 << MAX_CODESIZE as usize;
@@ -459,7 +459,7 @@ impl<W: BitWriter> Drop for Encoder<W> {
 #[cfg(test)]
 #[test]
 fn round_trip() {
-    use {LsbReader, LsbWriter};
+    use crate::{LsbReader, LsbWriter};
 
     let size = 8;
     let data = b"TOBEORNOTTOBEORTOBEORNOT";

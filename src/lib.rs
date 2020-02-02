@@ -25,6 +25,6 @@
 mod bitstream;
 mod lzw;
 
-pub use lzw::{encode, Decoder, DecoderEarlyChange, Encoder};
+pub use crate::lzw::{encode, Decoder, DecoderEarlyChange, Encoder};
 
-pub use bitstream::{BitReader, BitWriter, Bits, LsbReader, LsbWriter, MsbReader, MsbWriter};
+pub use crate::bitstream::{BitReader, BitWriter, Bits, LsbReader, LsbWriter, MsbReader, MsbWriter};
