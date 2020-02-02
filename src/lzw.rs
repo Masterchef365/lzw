@@ -5,9 +5,9 @@
 // and a C++ implementatation
 
 use std::io;
-use std::io::{Read, Write};
+use std::io::Read;
 
-use bitstream::{Bits, BitReader, BitWriter};
+use bitstream::{BitReader, BitWriter, Bits};
 
 const MAX_CODESIZE: u8 = 12;
 const MAX_ENTRIES: usize = 1 << MAX_CODESIZE as usize;
@@ -30,9 +30,9 @@ impl DecodingDict {
     /// Creates a new dict
     fn new(min_size: u8) -> DecodingDict {
         DecodingDict {
-            min_size: min_size,
+            min_size,
             table: Vec::with_capacity(512),
-            buffer: Vec::with_capacity((1 << MAX_CODESIZE as usize) - 1)
+            buffer: Vec::with_capacity((1 << MAX_CODESIZE as usize) - 1),
         }
     }
 
@@ -63,25 +63,33 @@ impl DecodingDict {
                     code = code_;
                     cha = cha_;
                 }
-                None => return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    &*format!("Invalid code {:X}, expected code <= {:X}", k, self.table.len())
-                ))
+                None => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        &*format!(
+                            "Invalid code {:X}, expected code <= {:X}",
+                            k,
+                            self.table.len()
+                        ),
+                    ))
+                }
             }
             self.buffer.push(cha);
         }
         while let Some(k) = code {
-            if self.buffer.len() >= MAX_ENTRIES { 
+            if self.buffer.len() >= MAX_ENTRIES {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    "Invalid code sequence. Cycle in decoding table."
-                ))
+                    "Invalid code sequence. Cycle in decoding table.",
+                ));
             }
             //(code, cha) = self.table[k as usize];
             // Note: This could possibly be replaced with an unchecked array access if
             //  - value is asserted to be < self.next_code() in push
-            //  - min_size is asserted to be < MAX_CODESIZE 
-            let entry = self.table[k as usize]; code = entry.0; cha = entry.1;
+            //  - min_size is asserted to be < MAX_CODESIZE
+            let entry = self.table[k as usize];
+            code = entry.0;
+            cha = entry.1;
             self.buffer.push(cha);
         }
         self.buffer.reverse();
@@ -109,7 +117,7 @@ macro_rules! define_decoder_struct {
 $( // START struct definition
 
 #[$doc]
-/// 
+///
 /// The maximum supported code size is 16 bits. The decoder assumes two
 /// special code word to be present in the stream:
 ///
@@ -131,7 +139,7 @@ pub struct $name<R: BitReader> {
 }
 
 impl<R> $name<R> where R: BitReader {
-    /// Creates a new LZW decoder. 
+    /// Creates a new LZW decoder.
     pub fn new(reader: R, min_code_size: u8) -> $name<R> {
         $name {
             r: reader,
@@ -144,7 +152,7 @@ impl<R> $name<R> where R: BitReader {
             end_code: (1 << min_code_size) + 1,
         }
     }
-    
+
     /// Tries to obtain and decode a code word from `bytes`.
     ///
     /// Returns the number of bytes that have been consumed from `bytes`. An empty
@@ -177,19 +185,18 @@ impl<R> $name<R> where R: BitReader {
                         self.buf = [code as u8];
                         &self.buf[..]
                     } else {
-                        let data = if code == next_code {
-                            let cha = try!(self.table.reconstruct(prev))[0];
+                        if code == next_code {
+                            let cha = self.table.reconstruct(prev)?[0];
                             self.table.push(prev, cha);
-                            try!(self.table.reconstruct(Some(code)))
+                            self.table.reconstruct(Some(code))?
                         } else if code < next_code {
-                            let cha = try!(self.table.reconstruct(Some(code)))[0];
+                            let cha = self.table.reconstruct(Some(code))?[0];
                             self.table.push(prev, cha);
                             self.table.buffer()
                         } else {
                             // code > next_code is already tested a few lines earlier
                             unreachable!()
-                        };
-                        data
+                        }
                     };
                     if next_code == (1 << self.code_size as usize) - 1 - $offset
                        && self.code_size < MAX_CODESIZE {
@@ -211,7 +218,7 @@ impl<R> $name<R> where R: BitReader {
     }
 }
 
-define_decoder_struct!{
+define_decoder_struct! {
     Decoder, 0, #[doc = "Decoder for a LZW compressed stream (this algorithm is used for GIF files)."];
     DecoderEarlyChange, 1, #[doc = "Decoder for a LZW compressed stream using an “early change” algorithm (used in TIFF files)."];
 }
@@ -228,9 +235,9 @@ impl Node {
     fn new(c: u8) -> Node {
         Node {
             prefix: None,
-            c: c,
+            c,
             left: None,
-            right: None
+            right: None,
         }
     }
 }
@@ -238,7 +245,6 @@ impl Node {
 struct EncodingDict {
     table: Vec<Node>,
     min_size: u8,
-
 }
 
 /// Encoding dictionary based on a binary tree
@@ -246,7 +252,7 @@ impl EncodingDict {
     fn new(min_size: u8) -> EncodingDict {
         let mut this = EncodingDict {
             table: Vec::with_capacity(MAX_ENTRIES),
-            min_size: min_size
+            min_size,
         };
         this.reset();
         this
@@ -254,7 +260,7 @@ impl EncodingDict {
 
     fn reset(&mut self) {
         self.table.clear();
-        for i in 0 .. (1u16 << self.min_size as usize) {
+        for i in 0..(1u16 << self.min_size as usize) {
             self.push_node(Node::new(i as u8));
         }
     }
@@ -281,22 +287,17 @@ impl EncodingDict {
             if let Some(mut j) = self.table[i].prefix {
                 loop {
                     let entry = &mut self.table[j as usize];
-                    if c < entry.c {
-                        if let Some(k) = entry.left {
-                            j = k
-                        } else {
-                            entry.left = Some(table_size);
-                            break
-                        }
-                    } else if c > entry.c {
-                        if let Some(k) = entry.right {
-                            j = k
-                        } else {
-                            entry.right = Some(table_size);
-                            break
-                        }
+                    use std::cmp::Ordering;
+                    let m = match c.cmp(&entry.c) {
+                        Ordering::Less => &mut entry.left,
+                        Ordering::Greater => &mut entry.right,
+                        Ordering::Equal => return Some(j),
+                    };
+                    if let Some(k) = m {
+                        j = *k
                     } else {
-                        return Some(j)
+                        *m = Some(table_size);
+                        break;
                     }
                 }
             } else {
@@ -320,44 +321,45 @@ impl EncodingDict {
 
 /// Convenience function that reads and compresses all bytes from `R`.
 pub fn encode<R, W>(r: R, mut w: W, min_code_size: u8) -> io::Result<()>
-where R: Read, W: BitWriter {
+where
+    R: Read,
+    W: BitWriter,
+{
     let mut dict = EncodingDict::new(min_code_size);
     dict.push_node(Node::new(0)); // clear code
     dict.push_node(Node::new(0)); // end code
     let mut code_size = min_code_size + 1;
     let mut i = None;
     // gif spec: first clear code
-    try!(w.write_bits(dict.clear_code(), code_size));
+    w.write_bits(dict.clear_code(), code_size)?;
     let mut r = r.bytes();
     while let Some(Ok(c)) = r.next() {
         let prev = i;
         i = dict.search_and_insert(prev, c);
         if i.is_none() {
             if let Some(code) = prev {
-                try!(w.write_bits(code, code_size));
+                w.write_bits(code, code_size)?;
             }
             i = Some(dict.search_initials(c as Code))
         }
         // There is a hit: do not write out code but continue
         let next_code = dict.next_code();
-        if next_code > (1 << code_size as usize)
-           && code_size < MAX_CODESIZE {
+        if next_code > (1 << code_size as usize) && code_size < MAX_CODESIZE {
             code_size += 1;
         }
         if next_code > MAX_ENTRIES {
             dict.reset();
             dict.push_node(Node::new(0)); // clear code
             dict.push_node(Node::new(0)); // end code
-            try!(w.write_bits(dict.clear_code(), code_size));
+            w.write_bits(dict.clear_code(), code_size)?;
             code_size = min_code_size + 1;
         }
-
     }
     if let Some(code) = i {
-        try!(w.write_bits(code, code_size));
+        w.write_bits(code, code_size)?;
     }
-    try!(w.write_bits(dict.end_code(), code_size));
-    try!(w.flush());
+    w.write_bits(dict.end_code(), code_size)?;
+    w.flush()?;
     Ok(())
 }
 
@@ -367,7 +369,7 @@ pub struct Encoder<W: BitWriter> {
     dict: EncodingDict,
     min_code_size: u8,
     code_size: u8,
-    i: Option<Code>
+    i: Option<Code>,
 }
 
 impl<W: BitWriter> Encoder<W> {
@@ -380,16 +382,16 @@ impl<W: BitWriter> Encoder<W> {
         dict.push_node(Node::new(0)); // clear code
         dict.push_node(Node::new(0)); // end code
         let code_size = min_code_size + 1;
-        try!(w.write_bits(dict.clear_code(), code_size));
+        w.write_bits(dict.clear_code(), code_size)?;
         Ok(Encoder {
-            w: w,
-            dict: dict,
-            min_code_size: min_code_size,
-            code_size: code_size,
-            i: None
+            w,
+            dict,
+            min_code_size,
+            code_size,
+            i: None,
         })
     }
-    
+
     /// Compresses `bytes` and writes the result into the writer.
     ///
     /// ## Panics
@@ -406,24 +408,22 @@ impl<W: BitWriter> Encoder<W> {
             *i = dict.search_and_insert(prev, c);
             if i.is_none() {
                 if let Some(code) = prev {
-                    try!(w.write_bits(code, *code_size));
+                    w.write_bits(code, *code_size)?;
                 }
                 *i = Some(dict.search_initials(c as Code))
             }
             // There is a hit: do not write out code but continue
             let next_code = dict.next_code();
-            if next_code > (1 << *code_size as usize)
-               && *code_size < MAX_CODESIZE {
+            if next_code > (1 << *code_size as usize) && *code_size < MAX_CODESIZE {
                 *code_size += 1;
             }
             if next_code > MAX_ENTRIES {
                 dict.reset();
                 dict.push_node(Node::new(0)); // clear code
                 dict.push_node(Node::new(0)); // end code
-                try!(w.write_bits(dict.clear_code(), *code_size));
+                w.write_bits(dict.clear_code(), *code_size)?;
                 *code_size = self.min_code_size + 1;
             }
-
         }
         Ok(())
     }
@@ -434,7 +434,7 @@ impl<W: BitWriter> Drop for Encoder<W> {
     fn drop(&mut self) {
         let w = &mut self.w;
         let code_size = &mut self.code_size;
-        
+
         if let Some(code) = self.i {
             let _ = w.write_bits(code, *code_size);
         }
@@ -447,20 +447,20 @@ impl<W: BitWriter> Drop for Encoder<W> {
             let w = &mut self.w;
             let code_size = &mut self.code_size;
             if let Some(code) = self.i {
-                try!(w.write_bits(code, *code_size));
+                w.write_bits(code, *code_size)?;
             }
-            try!(w.write_bits(self.dict.end_code(), *code_size));
+            w.write_bits(self.dict.end_code(), *code_size)?;
             w.flush()
-         })().unwrap()
-        
+        })()
+        .unwrap()
     }
 }
 
 #[cfg(test)]
 #[test]
 fn round_trip() {
-    use {LsbWriter, LsbReader};
-    
+    use {LsbReader, LsbWriter};
+
     let size = 8;
     let data = b"TOBEORNOTTOBEORTOBEORNOT";
     let mut compressed = vec![];

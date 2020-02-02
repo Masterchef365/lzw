@@ -55,13 +55,12 @@ impl $name {
     }
 }
 
-define_bit_readers!{
+define_bit_readers! {
     LsbReader, #[doc = "Reads bits from a byte stream, LSB first."];
     MsbReader, #[doc = "Reads bits from a byte stream, MSB first."];
 }
 
 impl BitReader for LsbReader {
-
     fn read_bits(&mut self, mut buf: &[u8], n: u8) -> Bits {
         if n > 16 {
             // This is a logic error the program should have prevented this
@@ -70,12 +69,12 @@ impl BitReader for LsbReader {
         }
         let mut consumed = 0;
         while self.bits < n {
-            let byte = if buf.len() > 0 {
+            let byte = if !buf.is_empty() {
                 let byte = buf[0];
                 buf = &buf[1..];
                 byte
             } else {
-                return Bits::None(consumed)
+                return Bits::None(consumed);
             };
             self.acc |= (byte as u32) << self.bits;
             self.bits += 8;
@@ -86,11 +85,9 @@ impl BitReader for LsbReader {
         self.bits -= n;
         Bits::Some(consumed, res as u16)
     }
-
 }
 
 impl BitReader for MsbReader {
-
     fn read_bits(&mut self, mut buf: &[u8], n: u8) -> Bits {
         if n > 16 {
             // This is a logic error the program should have prevented this
@@ -99,12 +96,12 @@ impl BitReader for MsbReader {
         }
         let mut consumed = 0;
         while self.bits < n {
-            let byte = if buf.len() > 0 {
+            let byte = if !buf.is_empty() {
                 let byte = buf[0];
                 buf = &buf[1..];
                 byte
             } else {
-                return Bits::None(consumed)
+                return Bits::None(consumed);
             };
             self.acc |= (byte as u32) << (24 - self.bits);
             self.bits += 8;
@@ -151,7 +148,7 @@ impl<W: Write> Write for $name<W> {
             self.w.write(buf)
         } else {
             for &byte in buf.iter() {
-                try!(self.write_bits(byte as u16, 8))
+                self.write_bits(byte as u16, 8)?;
             }
             Ok(buf.len())
         }
@@ -160,7 +157,7 @@ impl<W: Write> Write for $name<W> {
     fn flush(&mut self) -> io::Result<()> {
         let missing = 8 - self.bits;
         if missing > 0 {
-            try!(self.write_bits(0, missing));
+            self.write_bits(0, missing)?;
         }
         self.w.flush()
     }
@@ -171,41 +168,35 @@ impl<W: Write> Write for $name<W> {
     }
 }
 
-define_bit_writers!{
+define_bit_writers! {
     LsbWriter, #[doc = "Writes bits to a byte stream, LSB first."];
     MsbWriter, #[doc = "Writes bits to a byte stream, MSB first."];
 }
 
 impl<W: Write> BitWriter for LsbWriter<W> {
-
     fn write_bits(&mut self, v: u16, n: u8) -> io::Result<()> {
         self.acc |= (v as u32) << self.bits;
         self.bits += n;
         while self.bits >= 8 {
-            try!(self.w.write_all(&[self.acc as u8]));
+            self.w.write_all(&[self.acc as u8])?;
             self.acc >>= 8;
             self.bits -= 8
-
         }
         Ok(())
     }
-
 }
 
 impl<W: Write> BitWriter for MsbWriter<W> {
-
     fn write_bits(&mut self, v: u16, n: u8) -> io::Result<()> {
         self.acc |= (v as u32) << (32 - n - self.bits);
         self.bits += n;
         while self.bits >= 8 {
-            try!(self.w.write_all(&[(self.acc >> 24) as u8]));
+            self.w.write_all(&[(self.acc >> 24) as u8])?;
             self.acc <<= 8;
             self.bits -= 8
-
         }
         Ok(())
     }
-
 }
 
 #[cfg(test)]
@@ -226,7 +217,7 @@ mod test {
         {
             let mut writer = super::LsbWriter::new(&mut compressed_data);
             for &datum in expanded_data.iter() {
-                let _  = writer.write_bits(datum, 10);
+                let _ = writer.write_bits(datum, 10);
             }
         }
         assert_eq!(&data[..], &compressed_data[..])

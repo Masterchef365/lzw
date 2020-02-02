@@ -1,7 +1,7 @@
 //! # LZW decoder and encoder
 //!
 //! This crates provides a `LzwEncoder` and `LzwDecoder`. The code words are written from
-//! and to bit streams where it is possible to write either the most or least significant 
+//! and to bit streams where it is possible to write either the most or least significant
 //! bit first. The maximum possible code size is 16 bits. Both types rely on RAII to
 //! produced correct results.
 //!
@@ -22,22 +22,9 @@
 //!         enc.encode_bytes(data).unwrap();
 //!     }
 
-mod lzw;
 mod bitstream;
+mod lzw;
 
-pub use lzw::{
-    Decoder,
-    DecoderEarlyChange,
-    Encoder,
-    encode
-};
+pub use lzw::{encode, Decoder, DecoderEarlyChange, Encoder};
 
-pub use bitstream::{
-    BitReader,
-    BitWriter,
-    LsbReader,
-    LsbWriter,
-    MsbReader,
-    MsbWriter,
-    Bits
-};
+pub use bitstream::{BitReader, BitWriter, Bits, LsbReader, LsbWriter, MsbReader, MsbWriter};
